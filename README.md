@@ -18,7 +18,7 @@ python -m src.modeling         # 2) Model figures + fitted pipeline → figures/
 python -m src.generate_reports # 3) HTML reports → reports/
 ```
 
-All outputs (figures and reports) are already included in the repository — re-running is only needed if you want to reproduce from scratch.
+All outputs (figures and reports) are already included in the repository, re-running is only needed if you want to reproduce from scratch.
 
 Total runtime ≈ 4 minutes. Steps 1 and 2 can run independently; step 3 requires both.
 
