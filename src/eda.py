@@ -31,8 +31,10 @@ def _section(title: str) -> str:
 
 def main() -> dict:
     out: dict = {}
+    print("Loading data ...")
     df = pd.read_csv(DATA)
     n_rows, n_cols = df.shape
+    print(f"  {n_rows:,} rows × {n_cols} columns")
 
     # --- 1) Shape, dtypes, head ---
     dtypes = df.dtypes.astype(str).to_dict()
@@ -53,6 +55,7 @@ def main() -> dict:
     out["duplicate_rows"] = int(df.duplicated().sum())
 
     # --- 4) Target balance ---
+    print("Checking target balance and data quality ...")
     target = "Churned"
     churn_rate = float(df[target].mean())
     out["target_balance"] = {
@@ -87,6 +90,7 @@ def main() -> dict:
     out["numeric_describe"] = num_desc.reset_index().rename(columns={"index": "column"}).to_dict(orient="records")
 
     # --- 7) Numeric distributions: figure grid ---
+    print("Plotting numeric distributions ...")
     n = len(num_cols)
     cols = 4
     rows = int(np.ceil(n / cols))
@@ -137,6 +141,7 @@ def main() -> dict:
     # --- 10) Point-biserial correlation with target ---
     # Equivalent to Pearson correlation when one variable is binary.
     # Measures the *linear* relationship between each feature and churn.
+    print("Computing feature correlations with churn ...")
     corrs = []
     for c in num_cols:
         s = df[[c, target]].dropna()
@@ -148,6 +153,7 @@ def main() -> dict:
     out["point_biserial_corr_with_target"] = corrs
 
     # --- 11) Correlation heatmap among numerics ---
+    print("Plotting correlation heatmap ...")
     corr_mat = df[num_cols].corr(numeric_only=True)
     fig, ax = plt.subplots(figsize=(min(0.5 * len(num_cols) + 4, 18), min(0.5 * len(num_cols) + 4, 18)))
     sns.heatmap(corr_mat, cmap="vlag", center=0, annot=False, cbar=True, ax=ax, square=True)
@@ -185,6 +191,7 @@ def main() -> dict:
     out["iqr_outliers"] = sorted(outlier_table, key=lambda x: x["pct_outliers"], reverse=True)
 
     # --- 13) Numeric feature distribution split by churn (top 12 by |r|) ---
+    print("Plotting top feature distributions by churn ...")
     top12 = [c["feature"] for c in corrs[:12]] if corrs else num_cols[:12]
     rows = 3
     cols = 4
@@ -215,6 +222,7 @@ def main() -> dict:
     out["signup_quarter_churn"] = q.round(4).to_dict(orient="records")
 
     # --- 16) Leakage sanity: distribution of Days_Since_Last_Purchase by churn ---
+    print("Running leakage sanity check ...")
     # A feature that perfectly separates churners from non-churners could indicate
     # data leakage (i.e. the feature is computed using post-churn information).
     # Days_Since_Last_Purchase is the most likely candidate — we verify it shows
@@ -250,7 +258,9 @@ def main() -> dict:
     out["categorical_strength_max_minus_min"] = cat_strength
 
     # --- Charts for the reports (missingness signal + MI vs correlation) ---
+    print("Generating missingness signal chart ...")
     supp = _chart_missingness(df, target)
+    print("Generating MI vs correlation chart ...")
     _chart_mi_vs_correlation(supp)
 
     print(f"EDA done. Figures → {FIG_DIR}.")
