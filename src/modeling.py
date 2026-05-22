@@ -49,7 +49,7 @@ DATA = ROOT / "ecommerce_customer_churn_dataset.csv"
 FIG_DIR = ROOT / "figures" / "modeling"
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
-SEED = 42
+SEED = 42          # fixed seed for reproducibility across split, CV, and importance
 MODEL_NAME = "HistGradientBoosting"
 sns.set_theme(context="notebook", style="whitegrid")
 
@@ -74,6 +74,11 @@ def make_model() -> Pipeline:
 
 
 def precision_at_k(y_true: np.ndarray, y_score: np.ndarray, k_fraction: float) -> float:
+    """Precision among the top-K% of customers ranked by predicted churn score.
+
+    Answers: of the customers we'd contact in a campaign targeting the top K%,
+    what fraction are actual churners?
+    """
     n = len(y_true)
     k = max(1, int(np.ceil(n * k_fraction)))
     idx = np.argsort(-y_score)[:k]
@@ -81,11 +86,22 @@ def precision_at_k(y_true: np.ndarray, y_score: np.ndarray, k_fraction: float) -
 
 
 def lift_at_k(y_true: np.ndarray, y_score: np.ndarray, k_fraction: float) -> float:
+    """Lift over random targeting at the top-K% cutoff.
+
+    A lift of 3× means the model's top-K list contains 3× as many true churners
+    as you'd expect from randomly selecting K% of the customer base.
+    """
     base = float(y_true.mean()) if y_true.mean() > 0 else 1.0
     return precision_at_k(y_true, y_score, k_fraction) / base
 
 
 def cv_scores(model: Pipeline, X_train: pd.DataFrame, y_train: pd.Series) -> dict:
+    """Run 5-fold stratified CV on the training set and return mean scores.
+
+    Used as a stability check before committing to the test set evaluation.
+    If CV and test set results agree closely, the model is not overfit to the split.
+    Stratified folds preserve the 28.9% churn rate in each fold.
+    """
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
     scores = cross_validate(
         model, X_train, y_train, cv=cv,
@@ -102,6 +118,11 @@ def cv_scores(model: Pipeline, X_train: pd.DataFrame, y_train: pd.Series) -> dic
 
 
 def holdout_scores(model: Pipeline, X_test: pd.DataFrame, y_test: pd.Series) -> tuple[dict, np.ndarray]:
+    """Compute all evaluation metrics on the untouched test set.
+
+    Returns a dict of metrics and the raw predicted probabilities.
+    Probabilities are clipped away from 0/1 before log-loss to avoid log(0).
+    """
     proba = model.predict_proba(X_test)[:, 1]
     pred = (proba >= 0.5).astype(int)
     return {
@@ -119,6 +140,11 @@ def holdout_scores(model: Pipeline, X_test: pd.DataFrame, y_test: pd.Series) -> 
 
 
 def plot_curves(proba: np.ndarray, y_test: pd.Series) -> dict:
+    """Generate and save the four standard evaluation figures.
+
+    ROC curve, Precision-Recall curve, calibration plot, and cumulative gains.
+    All saved to figures/modeling/ and paths returned as a dict.
+    """
     paths = {}
 
     # ROC
@@ -177,6 +203,13 @@ def plot_curves(proba: np.ndarray, y_test: pd.Series) -> dict:
 
 
 def confusion_at_thresholds(proba: np.ndarray, y_test: pd.Series, thresholds=(0.30, 0.50, 0.70)) -> list[dict]:
+    """Evaluate precision, recall, and F1 at multiple probability thresholds.
+
+    Illustrates the precision-recall trade-off: a lower threshold catches more
+    churners (higher recall) at the cost of more false positives (lower precision),
+    and vice versa. The right threshold is a business decision based on the
+    relative cost of a missed churner vs a wasted retention offer.
+    """
     rows = []
     for t in thresholds:
         pred = (proba >= t).astype(int)
@@ -194,7 +227,12 @@ def confusion_at_thresholds(proba: np.ndarray, y_test: pd.Series, thresholds=(0.
 
 
 def permutation_importances(model: Pipeline, X_test: pd.DataFrame, y_test: pd.Series, n_repeats: int = 5) -> pd.DataFrame:
-    """Permutation importance on a sample for speed."""
+    """Compute permutation importance scored by average precision (PR-AUC).
+
+    For each feature, shuffles its values n_repeats times and measures how much
+    PR-AUC drops — larger drop means the model relies on that feature more.
+    Runs on a sample of 8,000 rows for speed; results are stable at that size.
+    """
     sample_idx = np.random.RandomState(SEED).choice(len(X_test), size=min(8000, len(X_test)), replace=False)
     Xs = X_test.iloc[sample_idx]
     ys = y_test.iloc[sample_idx]
@@ -249,6 +287,7 @@ def main():
     y = df[TARGET].astype(int)
     X = df[feature_columns()].copy()
 
+    # Stratify on y to preserve the 28.9% churn rate in both train and test splits.
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.20, stratify=y, random_state=SEED,
     )
