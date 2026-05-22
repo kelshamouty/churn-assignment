@@ -65,7 +65,7 @@ def main() -> dict:
     }
 
     # --- 5) Categorical inventories ---
-    cat_cols = df.select_dtypes(include=["object"]).columns.tolist()
+    cat_cols = df.select_dtypes(include=["object", "string"]).columns.tolist()
     num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     if target in num_cols:
         num_cols.remove(target)
